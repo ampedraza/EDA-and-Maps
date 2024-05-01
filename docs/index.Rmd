@@ -1,0 +1,258 @@
+---
+title: "Hurricane Data"
+author: "Alison Pedraza"
+date: '2024-03-19  (part of a project from 2020)'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(drat)
+addRepo("geanders")
+library(tidyverse)
+library(hurricaneexposuredata)
+library(magrittr)
+library(ggplot2)
+library(dplyr)
+#require(usmap)
+require(viridis)
+#library(tmap)
+library(maps)  #Used to map the States by county and get county map lat and long
+
+```
+
+
+
+```{r echo=FALSE}
+htmltools::img(src = knitr::image_uri("C:/Users/aliso/Documents/My Projects/EDA and Maps/Hurricane.jpg"), 
+               alt = 'logo', 
+               style = 'position:absolute; top:0; right:0; padding:20px;', )
+```
+
+<br>
+
+### Project Purpose and Outline:
+***
+
+**Purpose:** 
+
+  + To show the total amount of rainfall (in mm) from the Floyd, Allison, and Irene hurricanes and their tracks on a U.S. map.
+  
+  + To show data cleaning, preprocessing, and to display data on a map.
+
+**Outline:**
+  
+  + Hurricane data for Floyd (1999), Allison (2001), and Irene (2011)
+  
+  + Data Sources & libraries
+    
+  + Data Cleaning and Pre-processing:
+  
+      + Grouping
+      + Filtering
+      + Separating values within a column and placing into their own columns
+      + Joining dataframes
+      + Changing values from characters to numeric 
+      + Mutating values within a column
+    
+    <br>
+    
+  + Maps of U.S. states which were affected by these hurricanes
+  
+<br>
+
+
+### Data Sources:
+***
+  + Data came from the following libraries :
+  
+  
+      + hurricaneexposuredata
+      + maps
+      
+<br>
+
+  + Dataframes from **hurricaneexposuredata** library:
+  
+  
+      + "rain"
+      + "hurr_tracks"
+      + "county.fips"
+      
+<br>
+
+  + Dataframe from **maps** library:
+  
+      
+      + "county.fips"
+  
+<br>
+  
+  + Some other libraries used:
+  
+  
+      + usmap
+      + ggplot2
+        
+<br>
+
+<br>
+
+### Data Cleaning and Preprocessing
+***
+
+```{r  echo=TRUE, warning=FALSE, message=FALSE, message=FALSE}
+data("rain")
+data_rain <- as.data.frame(rain)
+data("hurr_tracks")
+data_tracks <- as.data.frame(hurr_tracks)
+```
+
+<br>
+
+<br>
+
+
+#### Filter out the storms: 
+
+  + Floyd (1999), Allison(2001), and Irene(2011) from the column storm_id, clean and preprocess:
+
+```{r echo=TRUE, warning=FALSE, message=FALSE, message=FALSE}
+storm_data <- data_rain %>% filter(storm_id == "Floyd-1999")
+Floyd_tracks <- data_tracks %>% filter(storm_id == "Floyd-1999")
+irene_data <- data_rain%>%filter(storm_id == "Irene-2011")
+irene_tracks <- data_tracks%>%filter(storm_id == "Irene-2011")
+storm_data2 <- data_rain %>% filter(storm_id == "Allison-2001")
+Allison_tracks <- data_tracks %>% filter(storm_id == "Allison-2001")
+
+## Group all the fip entries by fip number:
+
+Floyd_1999 <- storm_data %>% group_by(fips, storm_id)%>%
+  summarise(total_precip = sum(precip), precip_max = sum(precip_max))
+
+Allison_2001 <- storm_data2 %>% group_by(fips, storm_id)%>%
+  summarise(total_precip = sum(precip))
+
+irene_2011 <- irene_data %>%  group_by(fips, storm_id)%>%
+  summarise(total_precip = sum(precip))
+
+
+##Change fips to numeric
+Floyd_1999$fips <- as.numeric(Floyd_1999$fips)
+#is.numeric(Floyd_1999$fips)
+
+Allison_2001$fips <- as.numeric(Allison_2001$fips)
+#is.numeric(Allison_2001$fips)
+
+irene_2011$fips <- as.numeric(irene_2011$fips)
+#is.numeric(irene_2011$fips)
+
+data("county.fips")
+county_fips <- as.data.frame(county.fips)
+county_fips%<>%separate("polyname", c("region", "subregion"), sep = ",")
+
+# #Found map data for the united states and counties
+states <- map_data("state")
+county <- map_data("county")
+
+## Filtered out the states I want from map_data or states. Called it newStates
+
+
+some.us.states <- c("maine", "vermont", "new hampshire", "massachusetts", "connecticut", "rhode island",
+                     "new york", "new jersey", "delaware", "pennsylvania", "north carolina", "south carolina", 
+                     "louisiana", "georgia", "florida", "mississippi", "texas", "virginia", "west virginia", 
+                     "tennessee", "maryland", "alabama", "arkansas", "missouri", "illinois", "kentucky", "indiana",
+                     "ohio", "michigan", "wisconsin", "oklahoma", "kansas", "iowa")
+
+
+#Get only the states and counties I want - using vector.
+
+county.map <- map_data("county", some.us.states)
+Floyd_states <- map_data("state", some.us.states)
+Allison_states <- map_data("state", some.us.states)
+irene_states <- map_data("state", some.us.states)
+
+# Merge and get lat and long into dataframes Floyd_storm data.
+Floyd_storm <- left_join(county_fips, Floyd_1999, by= c("fips"))
+Floyd_Rain <- left_join(Floyd_storm, county.map, by = c( "region", "subregion"))
+Floyd_Rain<- Floyd_Rain %>% mutate('Rain (mm)' = cut(Floyd_Rain$total_precip, 
+                                                     breaks = c(0,25,50,75,100,125,150,175,200,223),
+                                                  include.lowest = TRUE))
+Floyd_Rain<- na.omit(Floyd_Rain)
+
+Allison_2001 <- left_join(Allison_2001, county_fips, by = "fips")
+Allison_2001<- left_join(county.map, Allison_2001, by = c("region", "subregion"))
+Allison_2001 <- Allison_2001 %>%
+  mutate(`Rain > 175 (mm)` = ifelse(Allison_2001$total_precip < 175, "Unexposed", "Exposed"))
+Allison_2001 <- na.omit(Allison_2001)
+Allison_Rain<- Allison_2001 %>% mutate('Rain (mm)' = cut(Allison_2001$total_precip, 
+                                                     breaks = c(0,50,100,150,200, 250, 300, 350, 400, 440),
+                                                     include.lowest = TRUE))
+Allison_Rain<- na.omit(Allison_Rain)
+
+irene_2011 <- left_join(irene_2011, county_fips, by = "fips")
+irene_2011<- left_join(county.map, irene_2011, by = c("region", "subregion"))
+irene_2011 <- irene_2011 %>%
+  mutate(`Rain > 175 (mm)` = ifelse(irene_2011$total_precip < 175, "Unexposed", "Exposed"))
+irene_2011 <- na.omit(irene_2011)
+irene_Rain<- irene_2011 %>% mutate('Rain (mm)' = cut(irene_2011$total_precip, 
+                                                     breaks = c(0,50,75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325),
+                                                     include.lowest = TRUE))
+irene_Rain<- na.omit(Allison_Rain)
+```
+
+<br>
+
+<br>
+
+## Maps
+***
+
+<br>
+
+### Floyd map: Total Precipitation and Hurricane track
+
+
+```{r echo=TRUE, warning=FALSE, message=FALSE, message=FALSE}
+ggplot() + geom_polygon(data = Floyd_Rain, aes(x = long, y = lat, group = group, fill = `Rain (mm)`),
+                        color = "lightgrey", size = .2, alpha = 1.0) + geom_polygon(data = Floyd_states, aes(x = long, y = lat, group = group), 
+                       color = "black", fill = "transparent",  size = 0.1, alpha = 0.3)+
+  scale_fill_brewer(palette = "Blues") +
+  geom_path(aes(x = Floyd_tracks$longitude, y = Floyd_tracks$latitude), color = "red") +
+  ggtitle("Hurricane Floyd - 1999: Total Precipitation and Track")
+```
+
+<br>
+
+<br>
+
+### Allison map: Total Precipitation and Hurricane track
+
+
+```{r echo=TRUE, warning=FALSE, message=FALSE, message=FALSE}
+ggplot() + geom_polygon(data = Allison_Rain, aes(x = long, y = lat, group = group, fill = `Rain (mm)`),
+                        color = "lightgrey", size = .2, alpha = 1.0) + geom_polygon(data = Allison_states, aes(x = long, y = lat, group = group), 
+                       color = "black", fill = "transparent",  size = 0.1, alpha = 0.3) +
+  scale_fill_brewer(palette = "Set3") +
+  geom_path(aes(x = Allison_tracks$longitude, y = Allison_tracks$latitude), color = "red") +
+  ggtitle("Hurricane Allison-2001: Total Precipitation (mm) and Track")
+```
+
+
+<br>
+
+<br>
+
+### Irene map: Total Precipitation and Hurricane track
+
+
+```{r echo=TRUE, warning=FALSE, message=FALSE, message=FALSE}
+ggplot() + geom_polygon(data = irene_Rain, aes(x = long, y = lat, group = group, fill = `Rain (mm)`),
+                        color = "lightgrey", size = .2, alpha = 1.0) + geom_polygon(data = irene_states, aes(x = long, y = lat, group = group), 
+                       color = "black", fill = "transparent",  size = 0.1, alpha = 0.3) +
+  scale_fill_brewer(palette = "YlOrRd") +
+  geom_path(aes(x = irene_tracks$longitude, y = irene_tracks$latitude), color = "red") +
+  ggtitle("Hurricane Irene-2011: Total Precipitation (mm) and Track")
+```
+
+<br>
